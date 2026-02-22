@@ -1,0 +1,9 @@
+{
+	"id": "JT9GifOCGisq5H6",
+	"json": "{\"id\":\"JT9GifOCGisq5H6\",\"url\":\"https://www.twidouga.net/ko/ranking_t1.php\",\"loadedUrl\":\"https://www.twidouga.net/ko/ranking_t1.php\",\"uniqueKey\":\"https://www.twidouga.net/ko/ranking_t1.php\",\"method\":\"GET\",\"noRetry\":false,\"retryCount\":0,\"errorMessages\":[],\"headers\":{},\"userData\":{\"__crawlee\":{\"state\":4}},\"handledAt\":\"2026-01-22T09:23:34.109Z\"}",
+	"method": "GET",
+	"orderNo": null,
+	"retryCount": 0,
+	"uniqueKey": "https://www.twidouga.net/ko/ranking_t1.php",
+	"url": "https://www.twidouga.net/ko/ranking_t1.php"
+}

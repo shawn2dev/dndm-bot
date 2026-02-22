@@ -1,0 +1,13 @@
+name = "shawnybot"
+main = "./src/server.js"
+# compatibility_flags = [ "nodejs_compat" ]
+compatibility_date="2025-02-22"
+
+[[kv_namespaces]]
+binding = "VIDEO_STORAGE"
+id = "d620fc69264c4085bdf528b80014e6cc"
+
+# [secrets]
+# DISCORD_TOKEN
+# DISCORD_PUBLIC_KEY
+# DISCORD_APPLICATION_ID

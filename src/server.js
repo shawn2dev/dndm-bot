@@ -8,9 +8,7 @@ import {
   InteractionType,
   verifyKey,
 } from 'discord-interactions';
-import { SHAWNY_COMMAND, SEO_COMMAND, D_DAY_COMMAND, YA_COMMAND } from './commands.js';
-import { getContentUrl } from './reddit.js';
-import { daysSinceTargetDate, getRandomMp4 } from './utils.js';
+import { APPROVE_COMMAND, BLOCK_COMMAND, WELCOME_COMMAND } from './commands.js';
 
 class JsonResponse extends Response {
   constructor(body, init) {
@@ -22,6 +20,24 @@ class JsonResponse extends Response {
     };
     super(jsonBody, init);
   }
+}
+
+/** Whitelist: add user to allowed list (KV key "list" = JSON array of user ids) */
+async function approveUser(userId, env) {
+  const current = await env.ALLOWED_USERS.get('list');
+  const list = current ? JSON.parse(current) : [];
+  if (!list.includes(userId)) list.push(userId);
+  await env.ALLOWED_USERS.put('list', JSON.stringify(list));
+  return list;
+}
+
+/** Whitelist: remove user from allowed list */
+async function blockUser(userId, env) {
+  const current = await env.ALLOWED_USERS.get('list');
+  const list = current ? JSON.parse(current) : [];
+  const newList = list.filter((id) => id !== userId);
+  await env.ALLOWED_USERS.put('list', JSON.stringify(newList));
+  return newList;
 }
 
 const router = AutoRouter();
@@ -56,46 +72,85 @@ router.post('/', async (request, env) => {
   }
   
   if (interaction.type === InteractionType.APPLICATION_COMMAND) {
-    // Most user commands will come as `APPLICATION_COMMAND`.
-    switch (interaction.data.name.toLowerCase()) {
-      case SHAWNY_COMMAND.name.toLowerCase(): {
-        return new JsonResponse({
-          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-          data: {
-            content: SHAWNY_COMMAND.response,
-          },
-        });
-      }
-      case SEO_COMMAND.name.toLowerCase(): {
-        return new JsonResponse({
-          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-          data: {
-            content: SEO_COMMAND.response,
-          },
-        });
-      }
-      case D_DAY_COMMAND.name.toLowerCase(): {
-        return new JsonResponse({
-          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-          data: {
-            content: `${daysSinceTargetDate('2026-01-08', 'Asia/Seoul')}일째 ❤️`,
-          },
-        });
-      }
-      case YA_COMMAND.name.toLowerCase(): {
-        const yaUrls = ['https://www.twidouga.net/ko/ranking_t1.php', 'https://www.twidouga.net/ko/ranking_t2.php'];
-        const randomIndex = Math.floor(Math.random() * yaUrls.length);
-        const randomMp4Url = await getRandomMp4(yaUrls[randomIndex]);
-        return new JsonResponse({
-          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-          data: {
-            content: randomMp4Url,
-          },
-        });
-      }
-      default:
-        return new JsonResponse({ error: 'Unknown Type' }, { status: 400 });
+    const commandName = interaction.data.name.toLowerCase();
+    const user = interaction.member?.user ?? interaction.user;
+    const userId = user.id;
+
+    // Owner-only: approve / block / 환영
+    if (userId !== env.OWNER_ID) {
+      return new JsonResponse({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: { content: '권한 없음', flags: 64 },
+      });
     }
+
+    if (commandName === APPROVE_COMMAND.name.toLowerCase()) {
+      const targetUserId = interaction.data.options?.[0]?.value;
+      if (!targetUserId) {
+        return new JsonResponse({
+          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+          data: { content: '대상 유저를 선택해 주세요.', flags: 64 },
+        });
+      }
+      await approveUser(targetUserId, env);
+      return new JsonResponse({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: { content: `<@${targetUserId}> 승인됨` },
+      });
+    }
+
+    if (commandName === BLOCK_COMMAND.name.toLowerCase()) {
+      const targetUserId = interaction.data.options?.[0]?.value;
+      if (!targetUserId) {
+        return new JsonResponse({
+          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+          data: { content: '대상 유저를 선택해 주세요.', flags: 64 },
+        });
+      }
+      await blockUser(targetUserId, env);
+      return new JsonResponse({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: { content: `<@${targetUserId}> 차단됨` },
+      });
+    }
+
+    if (commandName === WELCOME_COMMAND.name.toLowerCase()) {
+      const options = interaction.data.options ?? [];
+      const targetUserId = options.find((o) => o.name === 'target_user')?.value;
+      const channelId = options.find((o) => o.name === 'channel')?.value;
+      const customMessage = options.find((o) => o.name === 'message')?.value;
+      if (!targetUserId || !channelId) {
+        return new JsonResponse({
+          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+          data: { content: '대상 유저와 채널을 선택해 주세요.', flags: 64 },
+        });
+      }
+      const content = customMessage?.trim()
+        ? `${customMessage.trim()} <@${targetUserId}>`
+        : `환영합니다 <@${targetUserId}>!`;
+      const createRes = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bot ${env.DISCORD_TOKEN}`,
+        },
+        body: JSON.stringify({ content }),
+      });
+      if (!createRes.ok) {
+        const errText = await createRes.text();
+        console.error('Discord create message failed:', createRes.status, errText);
+        return new JsonResponse({
+          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+          data: { content: `채널에 메시지를 보내지 못했습니다. (${createRes.status})`, flags: 64 },
+        });
+      }
+      return new JsonResponse({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: { content: '환영 메시지를 보냈습니다.', flags: 64 },
+      });
+    }
+
+    return new JsonResponse({ error: 'Unknown Type' }, { status: 400 });
   }
 
   console.error('Unknown Type');

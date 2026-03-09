@@ -1,7 +1,11 @@
-name = "dmdnbot"
+name = "dndmbot"
 main = "./src/server.js"
 # compatibility_flags = [ "nodejs_compat" ]
 compatibility_date="2025-02-22"
+
+[[kv_namespaces]]
+binding = "ALLOWED_USERS"
+id = "c570fcb120504c3fbe0605ae518ec606"
 
 # [secrets]
 # DISCORD_TOKEN

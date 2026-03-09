@@ -110,14 +110,16 @@ router.post('/', async (request, env) => {
       await blockUser(targetUserId, env);
       return new JsonResponse({
         type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-        data: { content: `<@${targetUserId}> 차단됨` },
+        data: { content: `<@${targetUserId}> 제거됨` },
       });
     }
 
     if (commandName === WELCOME_COMMAND.name.toLowerCase()) {
+      const auto_channel_id = 1342645057823703060;
+      const main_channel_id = 1474993463312388158;
+      const auto_message = `.환영 <@${targetUserId}>`;
       const options = interaction.data.options ?? [];
       const targetUserId = options.find((o) => o.name === 'target_user')?.value;
-      const channelId = options.find((o) => o.name === 'channel')?.value;
       const customMessage = options.find((o) => o.name === 'message')?.value;
       if (!targetUserId || !channelId) {
         return new JsonResponse({
@@ -125,10 +127,28 @@ router.post('/', async (request, env) => {
           data: { content: '대상 유저와 채널을 선택해 주세요.', flags: 64 },
         });
       }
+
+      const createRes1 = await fetch(`https://discord.com/api/v10/channels/${auto_channel_id}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bot ${env.DISCORD_TOKEN}`,
+        },
+        body: JSON.stringify({ auto_message }),
+      });
+      if (!createRes1.ok) {
+        const errText = await createRes.text();
+        console.error('Discord create message failed:', createRes.status, errText);
+        return new JsonResponse({
+          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+          data: { content: `AUTO 메시지를 보내지 못했습니다. (${createRes.status})`, flags: 64 },
+        });
+      }
+
       const content = customMessage?.trim()
-        ? `${customMessage.trim()} <@${targetUserId}>`
-        : `환영합니다 <@${targetUserId}>!`;
-      const createRes = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+        ? `<@${targetUserId}> ${customMessage.trim()}`
+        : `<@${targetUserId}> 어서오세요!`;
+      const createRes2 = await fetch(`https://discord.com/api/v10/channels/${main_channel_id}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -136,7 +156,7 @@ router.post('/', async (request, env) => {
         },
         body: JSON.stringify({ content }),
       });
-      if (!createRes.ok) {
+      if (!createRes2.ok) {
         const errText = await createRes.text();
         console.error('Discord create message failed:', createRes.status, errText);
         return new JsonResponse({

@@ -19,10 +19,9 @@ export const BLOCK_COMMAND = {
 
 export const WELCOME_COMMAND = {
   name: '환영',
-  description: 'Send a custom welcome message to a specific channel (owner only)',
+  description: '환영 메시지 보내기',
   options: [
     { name: 'target_user', description: 'User to welcome', type: 6, required: true },
-    { name: 'channel', description: 'Channel to send the message to', type: 7, required: true },
     { name: 'message', description: 'Custom message (e.g. welcome text). Use empty or leave default for simple mention.', type: 3, required: false },
   ],
 };

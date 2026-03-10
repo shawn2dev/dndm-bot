@@ -1,4 +1,4 @@
-import { APPROVE_COMMAND, BLOCK_COMMAND, WELCOME_COMMAND } from './commands.js';
+import { APPROVE_COMMAND, BLOCK_COMMAND, WELCOME_COMMAND, WELCOME_CONFIG_COMMAND, VERIFY_COMMAND, VERIFY_CONFIG_COMMAND } from './commands.js';
 import dotenv from 'dotenv';
 import process from 'node:process';
 
@@ -34,7 +34,7 @@ const response = await fetch(url, {
     Authorization: `Bot ${token}`,
   },
   method: 'PUT',
-  body: JSON.stringify([APPROVE_COMMAND, BLOCK_COMMAND, WELCOME_COMMAND]),
+  body: JSON.stringify([APPROVE_COMMAND, BLOCK_COMMAND, WELCOME_COMMAND, WELCOME_CONFIG_COMMAND, VERIFY_COMMAND, VERIFY_CONFIG_COMMAND]),
 });
 
 if (response.ok) {

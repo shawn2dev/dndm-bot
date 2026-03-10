@@ -75,6 +75,17 @@ async function blockRole(roleId, env) {
   return newList;
 }
 
+/** True if user is in allowed_users or has any role in allowed_roles */
+async function isAllowed(userId, memberRoleIds, env) {
+  const usersRaw = await env.ALLOWED_USERS.get(KV_KEY_ALLOWED_USERS) ?? await env.ALLOWED_USERS.get('list');
+  const users = usersRaw ? JSON.parse(usersRaw) : [];
+  if (users.includes(userId)) return true;
+  const rolesRaw = await env.ALLOWED_USERS.get(KV_KEY_ALLOWED_ROLES);
+  const roles = rolesRaw ? JSON.parse(rolesRaw) : [];
+  const memberRoles = Array.isArray(memberRoleIds) ? memberRoleIds : [];
+  return memberRoles.some((roleId) => roles.includes(String(roleId)));
+}
+
 const router = AutoRouter();
 
 /**
@@ -110,13 +121,31 @@ router.post('/', async (request, env, ctx) => {
     const commandName = interaction.data.name.toLowerCase();
     const user = interaction.member?.user ?? interaction.user;
     const userId = user.id;
+    const memberRoleIds = interaction.member?.roles ?? [];
 
-    // Owner-only: approve / block / 입장 / 입장설정 / 인증 / 인증설정
-    if (userId !== env.OWNER_ID) {
-      return new JsonResponse({
-        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-        data: { content: '권한 없음', flags: 64 },
-      });
+    // Owner-only: approve, block
+    const ownerOnlyCommands = [
+      APPROVE_COMMAND.name.toLowerCase(),
+      BLOCK_COMMAND.name.toLowerCase(),
+    ];
+    if (ownerOnlyCommands.includes(commandName)) {
+      if (userId !== env.OWNER_ID) {
+        return new JsonResponse({
+          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+          data: { content: '권한 없음', flags: 64 },
+        });
+      }
+    } else {
+      // All other commands: allow owner OR (allowed_users OR allowed_roles)
+      if (userId !== env.OWNER_ID) {
+        const allowed = await isAllowed(userId, memberRoleIds, env);
+        if (!allowed) {
+          return new JsonResponse({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: { content: '권한 없음', flags: 64 },
+          });
+        }
+      }
     }
 
     if (commandName === APPROVE_COMMAND.name.toLowerCase()) {

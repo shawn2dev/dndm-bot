@@ -8,19 +8,27 @@ import {
   InteractionType,
   verifyKey,
 } from 'discord-interactions';
-import { APPROVE_COMMAND, BLOCK_COMMAND, WELCOME_COMMAND, WELCOME_CONFIG_COMMAND, VERIFY_COMMAND, VERIFY_CONFIG_COMMAND } from './commands.js';
+import { APPROVE_COMMAND, BLOCK_COMMAND, WELCOME_COMMAND, WELCOME_CONFIG_COMMAND, VERIFY_COMMAND, VERIFY_CONFIG_COMMAND, EMOJI_COMMAND } from './commands.js';
+import { JsonResponse } from './JsonResponse.js';
 
-class JsonResponse extends Response {
-  constructor(body, init) {
-    const jsonBody = JSON.stringify(body);
-    init = init || {
-      headers: {
-        'content-type': 'application/json;charset=UTF-8',
-      },
-    };
-    super(jsonBody, init);
-  }
-}
+// ─── 명령어 권한 구분 ─────────────────────────────────────────
+/** 소유자 전용 (OWNER_ID만 사용 가능) */
+const OWNER_ONLY_COMMANDS = [
+  APPROVE_COMMAND.name.toLowerCase(),
+  BLOCK_COMMAND.name.toLowerCase(),
+];
+/** 관리자 전용 (소유자 또는 allowed_users / allowed_roles) */
+const ALLOWLIST_COMMANDS = [
+  WELCOME_COMMAND.name.toLowerCase(),
+  WELCOME_CONFIG_COMMAND.name.toLowerCase(),
+  VERIFY_COMMAND.name.toLowerCase(),
+  VERIFY_CONFIG_COMMAND.name.toLowerCase(),
+];
+/** 권한 없이 사용 가능 */
+const PUBLIC_COMMANDS = [
+  EMOJI_COMMAND.name.toLowerCase(),
+];
+// ─────────────────────────────────────────────────────────────
 
 /** KV key for the allowed users list (JSON array of user ids) */
 const KV_KEY_ALLOWED_USERS = 'allowed_users';
@@ -30,7 +38,7 @@ const KV_KEY_ALLOWED_ROLES = 'allowed_roles';
 const KV_KEY_WELCOME_AUTO_CHANNEL = 'welcome_auto_channel_id';
 /** KV key for the channel id where main welcome message is sent */
 const KV_KEY_WELCOME_MAIN_CHANNEL = 'welcome_main_channel_id';
-/** KV key for the role to grant on entrance (입장) */
+/** KV key for the role to grant on welcome (환영) */
 const KV_KEY_ENTRANCE_ROLE = 'entrance_role_id';
 /** KV key for the auto message prefix (e.g. ".환영") */
 const KV_KEY_WELCOME_AUTO_PREFIX = 'welcome_auto_prefix';
@@ -123,20 +131,15 @@ router.post('/', async (request, env, ctx) => {
     const userId = user.id;
     const memberRoleIds = interaction.member?.roles ?? [];
 
-    // Owner-only: approve, block
-    const ownerOnlyCommands = [
-      APPROVE_COMMAND.name.toLowerCase(),
-      BLOCK_COMMAND.name.toLowerCase(),
-    ];
-    if (ownerOnlyCommands.includes(commandName)) {
+    // 명령어 권한 검사 로직: 소유자 전용 → 검사, 관리자 전용 → 소유자 또는 allowlist 검사, 그 외(PUBLIC 등) → 검사 없음
+    if (OWNER_ONLY_COMMANDS.includes(commandName)) {
       if (userId !== env.OWNER_ID) {
         return new JsonResponse({
           type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
           data: { content: '권한 없음', flags: 64 },
         });
       }
-    } else {
-      // All other commands: allow owner OR (allowed_users OR allowed_roles)
+    } else if (ALLOWLIST_COMMANDS.includes(commandName)) {
       if (userId !== env.OWNER_ID) {
         const allowed = await isAllowed(userId, memberRoleIds, env);
         if (!allowed) {
@@ -216,7 +219,7 @@ router.post('/', async (request, env, ctx) => {
       const updates = [];
       if (roleId != null) {
         await env.ALLOWED_USERS.put(KV_KEY_ENTRANCE_ROLE, String(roleId));
-        updates.push(`입장 역할: <@&${roleId}>`);
+        updates.push(`환영 역할: <@&${roleId}>`);
       }
       if (autoChannel != null) {
         await env.ALLOWED_USERS.put(KV_KEY_WELCOME_AUTO_CHANNEL, String(autoChannel));
@@ -230,14 +233,14 @@ router.post('/', async (request, env, ctx) => {
         return new JsonResponse({
           type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
           data: {
-            content: '입장 역할, 자동 채널, 메인 채널 중 하나를 설정해 주세요. (`/입장설정` 옵션)',
+            content: '환영 역할, 자동 채널, 메인 채널 중 하나를 설정해 주세요. (`/환영설정` 옵션)',
             flags: 64,
           },
         });
       }
       return new JsonResponse({
         type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-        data: { content: `입장 설정 저장됨.\n${updates.join('\n')}` },
+        data: { content: `환영 설정 저장됨.\n${updates.join('\n')}` },
       });
     }
 
@@ -375,7 +378,7 @@ router.post('/', async (request, env, ctx) => {
       if (!targetUserId) {
         return new JsonResponse({
           type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-          data: { content: '입장 처리할 사용자를 선택해 주세요.', flags: 64 },
+          data: { content: '환영할 사용자를 선택해 주세요.', flags: 64 },
         });
       }
 
@@ -386,7 +389,7 @@ router.post('/', async (request, env, ctx) => {
         return new JsonResponse({
           type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
           data: {
-            content: '먼저 `/입장설정`으로 입장 역할, 자동 채널, 메인 채널을 설정해 주세요.',
+            content: '먼저 `/환영설정`으로 환영 역할, 자동 채널, 메인 채널을 설정해 주세요.',
             flags: 64,
           },
         });
@@ -406,7 +409,7 @@ router.post('/', async (request, env, ctx) => {
         data: { flags: 64 },
       });
       const workPromise = (async () => {
-        let resultContent = '입장 처리했습니다.';
+        let resultContent = '환영 처리했습니다.';
         try {
           // 1) Grant entrance role
           const addRoleRes = await fetch(
@@ -481,7 +484,7 @@ router.post('/', async (request, env, ctx) => {
             }
           }
         } catch (err) {
-          console.error('WELCOME_COMMAND (입장) error:', err);
+          console.error('WELCOME_COMMAND (환영) error:', err);
           resultContent = `오류: ${err?.message ?? String(err)}`;
         }
         await fetch(
@@ -498,6 +501,33 @@ router.post('/', async (request, env, ctx) => {
       })();
       if (ctx?.waitUntil) ctx.waitUntil(workPromise);
       return deferredResponse;
+    }
+
+    if (commandName === EMOJI_COMMAND.name.toLowerCase()) {
+      const options = interaction.data.options ?? [];
+      const emojiMessage = options.find((o) => o.name === 'emoji_message')?.value;
+      if (!emojiMessage || typeof emojiMessage !== 'string') {
+        return new JsonResponse({
+          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+          data: { content: '이모지를 입력해 주세요.', flags: 64 },
+        });
+      }
+      // Discord format: <:name:id> or <a:name:id> (animated)
+      const match = emojiMessage.match(/<a?:[\w]+:(\d+)>/);
+      if (!match) {
+        return new JsonResponse({
+          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+          data: { content: '커스텀 이모지 형식이 아닙니다. `<:이름:숫자>` 형태로 서버 이모지를 붙여넣어 주세요.', flags: 64 },
+        });
+      }
+      const emojiId = match[1];
+      const isAnimated = emojiMessage.startsWith('<a:');
+      const ext = isAnimated ? 'gif' : 'png';
+      const imageUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${ext}`;
+      return new JsonResponse({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: { content: imageUrl },
+      });
     }
 
     return new JsonResponse({ error: 'Unknown Type' }, { status: 400 });

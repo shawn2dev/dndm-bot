@@ -409,7 +409,7 @@ router.post('/', async (request, env, ctx) => {
         data: { flags: 64 },
       });
       const workPromise = (async () => {
-        let resultContent = '환영 처리했습니다.';
+        let resultContent = `환영 처리했습니다.\n<#${mainChannelId}>으로 가기`;
         try {
           // 1) Grant entrance role
           const addRoleRes = await fetch(

@@ -56,6 +56,14 @@ export const VERIFY_CONFIG_COMMAND = {
   ],
 };
 
+export const LOG_CONFIG_COMMAND = {
+  name: '로그설정',
+  description: '명령어 사용 로그를 출력할 채널 설정 (관리자 전용)',
+  options: [
+    { name: 'channel', description: '로그 메시지를 보낼 채널', type: 7, required: true },
+  ],
+};
+
 export const VERIFY_COMMAND = {
   name: '인증',
   description: '대상 사용자에게 인증 역할을 부여하고 축하 메시지 전송 (관리자 전용)',
@@ -75,3 +83,8 @@ export const EMOJI_COMMAND = {
   ],
 };
 // ─────────────────────────────────────────────────────────────
+
+export const INTRO_TEMPLATE_COMMAND = {
+  name: '자기소개양식',
+  description: '자기소개 양식을 출력합니다.',
+};

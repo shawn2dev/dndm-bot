@@ -8,7 +8,17 @@ import {
   InteractionType,
   verifyKey,
 } from 'discord-interactions';
-import { APPROVE_COMMAND, BLOCK_COMMAND, WELCOME_COMMAND, WELCOME_CONFIG_COMMAND, VERIFY_COMMAND, VERIFY_CONFIG_COMMAND, EMOJI_COMMAND } from './commands.js';
+import {
+  APPROVE_COMMAND,
+  BLOCK_COMMAND,
+  WELCOME_COMMAND,
+  WELCOME_CONFIG_COMMAND,
+  VERIFY_COMMAND,
+  VERIFY_CONFIG_COMMAND,
+  EMOJI_COMMAND,
+  INTRO_TEMPLATE_COMMAND,
+  LOG_CONFIG_COMMAND,
+} from './commands.js';
 import { JsonResponse } from './JsonResponse.js';
 
 // ─── 명령어 권한 구분 ─────────────────────────────────────────
@@ -23,6 +33,8 @@ const ALLOWLIST_COMMANDS = [
   WELCOME_CONFIG_COMMAND.name.toLowerCase(),
   VERIFY_COMMAND.name.toLowerCase(),
   VERIFY_CONFIG_COMMAND.name.toLowerCase(),
+  INTRO_TEMPLATE_COMMAND.name.toLowerCase(),
+  LOG_CONFIG_COMMAND.name.toLowerCase(),
 ];
 /** 권한 없이 사용 가능 */
 const PUBLIC_COMMANDS = [
@@ -46,6 +58,218 @@ const KV_KEY_WELCOME_AUTO_PREFIX = 'welcome_auto_prefix';
 const KV_KEY_VERIFY_ROLE = 'verification_role_id';
 /** KV key for the channel to send verify congrats message */
 const KV_KEY_VERIFY_CHANNEL = 'verification_channel_id';
+/** KV key for slash-command audit log output channel */
+const KV_KEY_COMMAND_LOG_CHANNEL = 'command_log_channel_id';
+/** Embed left bar color (Discord-style blue) */
+const COMMAND_LOG_EMBED_COLOR = 0x5865f2;
+
+function getServerNickname(interaction) {
+  const user = interaction.member?.user ?? interaction.user;
+  const nick = interaction.member?.nick;
+  if (nick != null && String(nick).trim()) return String(nick).trim();
+  if (user?.global_name != null && String(user.global_name).trim()) return String(user.global_name).trim();
+  if (user?.username) return String(user.username);
+  return '알 수 없음';
+}
+
+function getLogAuthorName(interaction) {
+  const user = interaction.member?.user ?? interaction.user;
+  if (!user) return '알 수 없음';
+  if (user.username) return String(user.username);
+  if (user.global_name != null && String(user.global_name).trim()) return String(user.global_name).trim();
+  return '알 수 없음';
+}
+
+function getUserAvatarUrl(user) {
+  if (!user?.id) return 'https://cdn.discordapp.com/embed/avatars/0.png';
+  if (user.avatar) {
+    const ext = String(user.avatar).startsWith('a_') ? 'gif' : 'png';
+    return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=128`;
+  }
+  const idx = Number((BigInt(user.id) >> 22n) % 6n);
+  return `https://cdn.discordapp.com/embed/avatars/${idx}.png`;
+}
+
+/** Unix seconds for when Discord created this interaction (snowflake). */
+function interactionCreatedUnixSec(interaction) {
+  if (!interaction?.id) return Math.floor(Date.now() / 1000);
+  try {
+    const ms = Number((BigInt(interaction.id) >> 22n) + 1420070400000n);
+    return Math.floor(ms / 1000);
+  } catch {
+    return Math.floor(Date.now() / 1000);
+  }
+}
+
+/** `YYYY-MM-DD HH:mm` (24h), for server logs only — default Asia/Seoul */
+function formatLogTimestamp(date = new Date(), timeZone = 'Asia/Seoul') {
+  const d = new Date(date);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d);
+  const pick = (type) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${pick('year')}-${pick('month')}-${pick('day')} ${pick('hour')}:${pick('minute')}`;
+}
+
+/** Discord option types 1 = SUB_COMMAND, 2 = SUB_COMMAND_GROUP; leaf: `name::value` */
+function formatSlashOptionsForLog(options) {
+  if (!options || options.length === 0) return '';
+  const parts = [];
+  for (const o of options) {
+    if (o.type === 1 || o.type === 2) {
+      const inner = formatSlashOptionsForLog(o.options);
+      parts.push(inner ? `${o.name} ${inner}` : o.name);
+    } else {
+      let v = o.value;
+      if (v == null) {
+        parts.push(`${o.name}::`);
+      } else {
+        if (typeof v === 'string') v = v.length > 800 ? `${v.slice(0, 800)}…` : v.replace(/\n/g, '\\n');
+        parts.push(`${o.name}::${String(v)}`);
+      }
+    }
+  }
+  return parts.join(' ');
+}
+
+/** Discord `<:n:id>` / `<a:n:id>` → CDN URL, 없으면 null */
+function customEmojiCdnUrlFromText(text) {
+  if (!text || typeof text !== 'string') return null;
+  const match = text.match(/<a?:[\w]+:(\d+)>/);
+  if (!match) return null;
+  const ext = text.trim().startsWith('<a:') ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/emojis/${match[1]}.${ext}`;
+}
+
+/** Slash + options; `이모지확대`는 `/이모지확대 emoji_message:<:…>` 형태로 표기 */
+function buildUsedCommandLine(interaction) {
+  const data = interaction.data;
+  const name = data?.name ?? 'unknown';
+  if (name.toLowerCase() === EMOJI_COMMAND.name.toLowerCase()) {
+    const raw = data?.options?.find((o) => o.name === 'emoji_message')?.value;
+    if (raw != null && String(raw).trim()) {
+      const v =
+        typeof raw === 'string'
+          ? raw.length > 800
+            ? `${raw.slice(0, 800)}…`
+            : raw.replace(/\n/g, '\\n')
+          : String(raw);
+      return `/${name} emoji_message:${v}`;
+    }
+    return `/${name}`;
+  }
+  const opts = formatSlashOptionsForLog(data?.options);
+  return opts ? `/${name} ${opts}` : `/${name}`;
+}
+
+async function resolveChannelDisplayName(interaction, env) {
+  const channelId = interaction.channel_id;
+  const embedded = interaction.channel;
+  if (embedded?.name) return String(embedded.name);
+  if (!channelId || !env.DISCORD_TOKEN) return channelId ? `#${channelId}` : '알 수 없음';
+  try {
+    const res = await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
+      headers: { Authorization: `Bot ${env.DISCORD_TOKEN}` },
+    });
+    if (!res.ok) return `#${channelId}`;
+    const j = await res.json();
+    return j.name ? String(j.name) : `#${channelId}`;
+  } catch {
+    return `#${channelId}`;
+  }
+}
+
+function buildCommandTryLogEmbed(interaction) {
+  const user = interaction.member?.user ?? interaction.user;
+  const userId = user?.id ?? '0';
+  const authorName = getLogAuthorName(interaction);
+  const iconUrl = getUserAvatarUrl(user);
+  const usedCommand = buildUsedCommandLine(interaction);
+  const cmdDisplay = usedCommand.replace(/`/g, '');
+  const channelId = interaction.channel_id;
+  const channelValue = channelId ? `<#${channelId}>` : '—';
+  const tSec = interactionCreatedUnixSec(interaction);
+  const timePlain = formatLogTimestamp(new Date(tSec * 1000));
+  const isEmojiCmd = interaction.data?.name?.toLowerCase() === EMOJI_COMMAND.name.toLowerCase();
+  const emojiRaw = isEmojiCmd
+    ? interaction.data?.options?.find((o) => o.name === 'emoji_message')?.value
+    : null;
+  const emojiImageUrl =
+    isEmojiCmd && typeof emojiRaw === 'string' ? customEmojiCdnUrlFromText(emojiRaw) : null;
+
+  /** `image` 는 필드 전부 아래에만 올 수 있음 → CDN 있을 때는 채널을 description 으로 올려 명령 필드 바로 아래에 이미지 */
+  let description = `<@${userId}> 방해금지봇 명령어 사용`;
+  let fields;
+  if (emojiImageUrl) {
+    description = `${description}\n\n사용된 채널: ${channelValue}`.slice(0, 4096);
+    fields = [{ name: '사용된 명령어', value: cmdDisplay.slice(0, 1024) || '—', inline: false }];
+  } else {
+    description = description.slice(0, 4096);
+    fields = [
+      { name: '사용된 명령어', value: cmdDisplay.slice(0, 1024) || '—', inline: false },
+      { name: '사용된 채널', value: channelValue.slice(0, 1024), inline: false },
+    ];
+  }
+
+  const authorWithTime = `${authorName} · ${timePlain}`.slice(0, 256);
+
+  const embed = {
+    color: COMMAND_LOG_EMBED_COLOR,
+    author: {
+      name: authorWithTime,
+      icon_url: iconUrl,
+    },
+    description,
+    fields,
+    footer: {
+      text: `ID: ${userId}`.slice(0, 2048),
+    },
+  };
+
+  if (emojiImageUrl) {
+    embed.image = { url: emojiImageUrl };
+  }
+
+  return embed;
+}
+
+/** Logs every slash command attempt (console; Discord channel if configured). */
+async function sendCommandTryLog(env, interaction) {
+  const channelName = await resolveChannelDisplayName(interaction, env);
+  const embed = buildCommandTryLogEmbed(interaction);
+  const usedCommand = buildUsedCommandLine(interaction);
+  const user = interaction.member?.user ?? interaction.user;
+  const userId = user?.id ?? '';
+  console.log(
+    `[command-log] ${formatLogTimestamp()} user=${userId} nick=${getServerNickname(interaction)} cmd=${usedCommand} channel=${channelName}`,
+  );
+
+  if (!env.ALLOWED_USERS) return;
+  const logChannelId = await env.ALLOWED_USERS.get(KV_KEY_COMMAND_LOG_CHANNEL);
+  if (!logChannelId || !env.DISCORD_TOKEN) return;
+  try {
+    const res = await fetch(`https://discord.com/api/v10/channels/${logChannelId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bot ${env.DISCORD_TOKEN}`,
+      },
+      body: JSON.stringify({ embeds: [embed] }),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('command log Discord post failed:', res.status, errText);
+    }
+  } catch (err) {
+    console.error('command log Discord post error:', err);
+  }
+}
 
 /** Whitelist: add user to allowed list */
 async function approveUser(userId, env) {
@@ -130,6 +354,9 @@ router.post('/', async (request, env, ctx) => {
     const user = interaction.member?.user ?? interaction.user;
     const userId = user.id;
     const memberRoleIds = interaction.member?.roles ?? [];
+
+    const logPromise = sendCommandTryLog(env, interaction);
+    if (ctx?.waitUntil) ctx.waitUntil(logPromise);
 
     // 명령어 권한 검사 로직: 소유자 전용 → 검사, 관리자 전용 → 소유자 또는 allowlist 검사, 그 외(PUBLIC 등) → 검사 없음
     if (OWNER_ONLY_COMMANDS.includes(commandName)) {
@@ -269,6 +496,22 @@ router.post('/', async (request, env, ctx) => {
       return new JsonResponse({
         type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
         data: { content: `인증 설정 저장됨.\n${updates.join('\n')}` },
+      });
+    }
+
+    if (commandName === LOG_CONFIG_COMMAND.name.toLowerCase()) {
+      const options = interaction.data.options ?? [];
+      const channelId = options.find((o) => o.name === 'channel')?.value;
+      if (channelId == null) {
+        return new JsonResponse({
+          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+          data: { content: '로그를 보낼 채널을 선택해 주세요.', flags: 64 },
+        });
+      }
+      await env.ALLOWED_USERS.put(KV_KEY_COMMAND_LOG_CHANNEL, String(channelId));
+      return new JsonResponse({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: { content: `명령 로그 채널이 <#${channelId}> 로 설정되었습니다.` },
       });
     }
 
@@ -520,13 +763,17 @@ router.post('/', async (request, env, ctx) => {
           data: { content: '커스텀 이모지 형식이 아닙니다. `<:이름:숫자>` 형태로 서버 이모지를 붙여넣어 주세요.', flags: 64 },
         });
       }
-      const emojiId = match[1];
-      const isAnimated = emojiMessage.startsWith('<a:');
-      const ext = isAnimated ? 'gif' : 'png';
-      const imageUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${ext}`;
+      const imageUrl = customEmojiCdnUrlFromText(emojiMessage);
       return new JsonResponse({
         type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
         data: { content: imageUrl },
+      });
+    }
+
+    if (commandName === INTRO_TEMPLATE_COMMAND.name.toLowerCase()) {
+      return new JsonResponse({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: { content: '홍길동 / 02 / 남자 / 디스보드' },
       });
     }
 

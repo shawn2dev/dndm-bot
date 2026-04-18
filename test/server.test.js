@@ -5,10 +5,9 @@ import {
   InteractionType,
   InteractionResponseFlags,
 } from 'discord-interactions';
-import { AWW_COMMAND, INVITE_COMMAND } from '../src/commands.js';
+import { EMOJI_COMMAND, INTRO_TEMPLATE_COMMAND } from '../src/commands.js';
 import sinon from 'sinon';
 import server from '../src/server.js';
-import { redditUrl } from '../src/reddit.js';
 
 describe('Server', () => {
   describe('GET /', () => {
@@ -59,11 +58,12 @@ describe('Server', () => {
       expect(body.type).to.equal(InteractionResponseType.PONG);
     });
 
-    it('should handle an AWW command interaction', async () => {
+    it('should handle an emoji command interaction', async () => {
       const interaction = {
         type: InteractionType.APPLICATION_COMMAND,
         data: {
-          name: AWW_COMMAND.name,
+          name: EMOJI_COMMAND.name,
+          options: [{ name: 'emoji_message', value: '<:ok:123>' }],
         },
       };
 
@@ -79,30 +79,19 @@ describe('Server', () => {
         interaction: interaction,
       });
 
-      // mock the fetch call to reddit
-      const result = sinon
-        // eslint-disable-next-line no-undef
-        .stub(global, 'fetch')
-        .withArgs(redditUrl)
-        .resolves({
-          status: 200,
-          ok: true,
-          json: sinon.fake.resolves({ data: { children: [] } }),
-        });
-
       const response = await server.fetch(request, env);
       const body = await response.json();
       expect(body.type).to.equal(
         InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
       );
-      expect(result.calledOnce);
+      expect(body.data.content).to.equal('https://cdn.discordapp.com/emojis/123.png');
     });
 
-    it('should handle an invite command interaction', async () => {
+    it('should handle intro template command interaction', async () => {
       const interaction = {
         type: InteractionType.APPLICATION_COMMAND,
         data: {
-          name: INVITE_COMMAND.name,
+          name: INTRO_TEMPLATE_COMMAND.name,
         },
       };
 
@@ -111,9 +100,7 @@ describe('Server', () => {
         url: new URL('/', 'http://discordo.example'),
       };
 
-      const env = {
-        DISCORD_APPLICATION_ID: '123456789',
-      };
+      const env = {};
 
       verifyDiscordRequestStub.resolves({
         isValid: true,
@@ -125,9 +112,7 @@ describe('Server', () => {
       expect(body.type).to.equal(
         InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
       );
-      expect(body.data.content).to.include(
-        'https://discord.com/oauth2/authorize?client_id=123456789&scope=applications.commands',
-      );
+      expect(body.data.content).to.equal('홍길동 / 02 / 남자 / 디스보드');
       expect(body.data.flags).to.equal(InteractionResponseFlags.EPHEMERAL);
     });
 

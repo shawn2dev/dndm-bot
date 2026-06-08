@@ -11,6 +11,7 @@ import {
 import {
   APPROVE_COMMAND,
   BLOCK_COMMAND,
+  ALLOWLIST_COMMAND,
   WELCOME_COMMAND,
   WELCOME_CONFIG_COMMAND,
   VERIFY_COMMAND,
@@ -22,10 +23,11 @@ import {
 import { JsonResponse } from './JsonResponse.js';
 
 // ─── 명령어 권한 구분 ─────────────────────────────────────────
-/** 소유자 전용 (OWNER_ID만 사용 가능) */
+/** 소유자 전용 (env.OWNER_ID — Cloudflare Plaintext 변수) */
 const OWNER_ONLY_COMMANDS = [
   APPROVE_COMMAND.name.toLowerCase(),
   BLOCK_COMMAND.name.toLowerCase(),
+  ALLOWLIST_COMMAND.name.toLowerCase(),
 ];
 /** 관리자 전용 (소유자 또는 allowed_users / allowed_roles) */
 const ALLOWLIST_COMMANDS = [
@@ -435,6 +437,19 @@ router.post('/', async (request, env, ctx) => {
       return new JsonResponse({
         type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
         data: { content: '제거할 사용자 또는 역할을 선택해 주세요.', flags: 64 },
+      });
+    }
+
+    if (commandName === ALLOWLIST_COMMAND.name.toLowerCase()) {
+      const usersRaw = await env.ALLOWED_USERS.get(KV_KEY_ALLOWED_USERS) ?? await env.ALLOWED_USERS.get('list');
+      const users = usersRaw ? JSON.parse(usersRaw) : [];
+      const rolesRaw = await env.ALLOWED_USERS.get(KV_KEY_ALLOWED_ROLES);
+      const roles = rolesRaw ? JSON.parse(rolesRaw) : [];
+      const rolesLine = roles.map((id) => `<@&${id}>`).join(' ');
+      const usersLine = users.map((id) => `<@${id}>`).join(' ');
+      return new JsonResponse({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: { content: `${rolesLine}\n${usersLine}` },
       });
     }
 

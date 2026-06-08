@@ -10,7 +10,7 @@ const roleOption = { name: 'role', description: '승인할 역할 (사용자와 
 const channelOption = (name, description) => ({ name, description, type: 7, required: false });
 // ─────────────────────────────────────────────────────────────
 
-// ─── 소유자 전용 (OWNER_ID만 사용 가능) ─────────────────────────
+// ─── 소유자 전용 (env.OWNER_ID — Cloudflare Plaintext 변수) ─────
 export const APPROVE_COMMAND = {
   name: 'approve',
   description: '사용자 또는 역할을 서버 관리자 목록에 추가 (소유자 전용)',
@@ -24,6 +24,11 @@ export const BLOCK_COMMAND = {
   name: 'block',
   description: '사용자 또는 역할을 봇 사용 허용 목록에서 제거 (소유자 전용)',
   options: [blockUserOption, blockRoleOption],
+};
+
+export const ALLOWLIST_COMMAND = {
+  name: '승인목록',
+  description: '봇 사용 허용 사용자 및 역할 목록 조회 (소유자 전용)',
 };
 // ─────────────────────────────────────────────────────────────
 

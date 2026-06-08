@@ -72,6 +72,11 @@ export const VERIFY_COMMAND = {
     { name: 'message', description: '맞춤 축하 메시지 (비워두면 "인증축하드립니다")', type: 3, required: false },
   ],
 };
+
+export const INTRO_TEMPLATE_COMMAND = {
+  name: '자기소개양식',
+  description: '자기소개 양식을 출력합니다. (관리자 전용)',
+};
 // ─────────────────────────────────────────────────────────────
 
 // ─── 권한 없이 사용 가능 ───────────────────────────────────────
@@ -83,8 +88,3 @@ export const EMOJI_COMMAND = {
   ],
 };
 // ─────────────────────────────────────────────────────────────
-
-export const INTRO_TEMPLATE_COMMAND = {
-  name: '자기소개양식',
-  description: '자기소개 양식을 출력합니다.',
-};
